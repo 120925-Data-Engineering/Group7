@@ -23,5 +23,14 @@ def create_spark_session(
     Returns:
         Configured SparkSession instance
     """
-    # TODO: Implement
-    pass
+    spark = (
+        SparkSession.builder
+        .appName(app_name)
+        .master(master)
+    )
+
+    if config_overrides:
+        for key, val in config_overrides.items():
+            spark = spark.config(key, val)
+
+    return spark.getOrCreate()

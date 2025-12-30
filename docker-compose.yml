@@ -17,7 +17,7 @@ services:
       - zookeeper_data:/var/lib/zookeeper/data
       - zookeeper_logs:/var/lib/zookeeper/log
     healthcheck:
-      test: [ "CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok" ]
+      test: [ "CMD-SHELL", "printf 'srvr' | nc localhost 2181 | grep -q Zookeeper" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -78,7 +78,7 @@ services:
   # SPARK (Master + Worker) - Running as root
   # =============================================================================
   spark-master:
-    image: bitnami/spark:3.5
+    image: bitnamilegacy/spark:3.5
     container_name: streamflow-spark-master
     user: root
     ports:
@@ -96,7 +96,7 @@ services:
       - streamflow-network
 
   spark-worker:
-    image: bitnami/spark:3.5
+    image: bitnamilegacy/spark:3.5
     container_name: streamflow-spark-worker
     user: root
     depends_on:
