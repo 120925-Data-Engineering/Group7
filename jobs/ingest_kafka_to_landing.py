@@ -24,10 +24,49 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     Returns:
         Number of messages consumed
     """
-    # TODO: Implement
-    pass
+    consumer = KafkaConsumer(
+        topic,
+        bootstrap_servers = ['localhost:9092'],
+        auto_offset_reset = 'earliest',
+        enable_auto_commit = False,
+        value_deserializer = lambda v: json.loads(v.decode('utf-8'))
+    )
 
+    messages = []
+    start = time.time()
+    #consume messages in a timed window
+    while time.time() - start < batch_duration_sec:
+        records = consumer.poll(timeout_ms=500)
+        for _, batch in records.items():
+            for record in batch:
+                messages.append(record.value)
+
+    if not messages:
+        return 0
+    
+    os.makedirs(output_path, exist_ok=True)
+
+    timestamp = int(time.time())
+    filename = f"{topic}_{timestamp}.json"
+    filepath = os.path.join(output_path, filename)
+
+    with open(filepath, 'w') as json_file:
+        json.dump(messages, json_file, indent=4)
+
+    consumer.commit()
+    consumer.close()
+    return len(messages)
 
 if __name__ == "__main__":
-    # TODO: Parse args and call consume_batch
-    pass
+    parser = argparse.ArgumentParser(description="Running Kafka Consumer")
+    parser.add_argument("--topic", required=True, help="Topic Name")
+    parser.add_argument("--duration", type=int, default=30, help="Duration")
+    parser.add_argument("--output", default="./data/landing", help="Output Path")
+
+    args = parser.parse_args()
+
+    consume_batch(
+        topic=args.topic,
+        batch_duration_sec=args.duration,
+        output_path=args.output
+    )
