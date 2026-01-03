@@ -26,7 +26,7 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     """
     consumer = KafkaConsumer(
         topic,
-        bootstrap_servers = ['localhost:9092'],
+        bootstrap_servers = ['kafka:9092'],
         auto_offset_reset = 'earliest',
         enable_auto_commit = False,
         value_deserializer = lambda v: json.loads(v.decode('utf-8'))
@@ -42,13 +42,15 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
                 messages.append(record.value)
 
     if not messages:
+        consumer.close()
         return 0
     
-    os.makedirs(output_path, exist_ok=True)
+    topic_dir = os.path.join(output_path, topic)
+    os.makedirs(topic_dir, exist_ok=True)
 
     timestamp = int(time.time())
     filename = f"{topic}_{timestamp}.json"
-    filepath = os.path.join(output_path, filename)
+    filepath = os.path.join(topic_dir, filename)
 
     with open(filepath, 'w') as json_file:
         json.dump(messages, json_file, indent=4)
@@ -61,7 +63,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Running Kafka Consumer")
     parser.add_argument("--topic", required=True, help="Topic Name")
     parser.add_argument("--duration", type=int, default=30, help="Duration")
-    parser.add_argument("--output", default="./data/landing", help="Output Path")
+    parser.add_argument("--output", default="/data/landing", help="Output Path")
 
     args = parser.parse_args()
 
