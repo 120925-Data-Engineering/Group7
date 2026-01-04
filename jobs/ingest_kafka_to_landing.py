@@ -53,7 +53,8 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     filepath = os.path.join(topic_dir, filename)
 
     with open(filepath, 'w') as json_file:
-        json.dump(messages, json_file, indent=4)
+        for mes in message:
+            json_file.write(json.dumps(mes) + '\n')
 
     consumer.commit()
     consumer.close()
