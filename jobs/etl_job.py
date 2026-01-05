@@ -44,8 +44,8 @@ if __name__ == "__main__":
     parser.add_argument('--config', action='append',help='Spark Configurations (OPTIONAL)')
 
     #For ETL Job
-    parser.add_argument('--landing', required=True, help='Landing Zone Directory') 
-    parser.add_argument('--gold', required=True, help='Gold Zone Directory')
+    parser.add_argument('--landing', required=True, help='/opt/spark-data/landing') 
+    parser.add_argument('--gold', required=True, help='/opt/spark-data/gold')
 
     args = parser.parse_args()
     config_dict = None
