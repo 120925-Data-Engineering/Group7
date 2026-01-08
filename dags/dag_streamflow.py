@@ -26,7 +26,28 @@ with DAG(
     # - ingest_kafka: Run ingest_kafka_to_landing.py
     # - spark_etl: spark-submit etl_job.py
     # - validate: Check output files
+    ingest_kafka = BashOperator(
+        task_id="ingest_kafka",
+        bash_command="""
+python /opt/airflow/jobs/ingest_kafka_to_landing.py --topic user_events --duration 30 --output /opt/spark-data/landing
+python /opt/airflow/jobs/ingest_kafka_to_landing.py --topic transaction_events --duration 30 --output /opt/spark-data/landing
+"""
+    )
+
+    # 2) Spark ETL
+    spark_etl = BashOperator(
+        task_id="spark_etl",
+        bash_command="""
+        spark-submit \
+          --master spark://spark-master:7077 \
+          /opt/spark/jobs/etl_job.py \
+          --name StreamFlow-ETL \
+          --landing /opt/spark-data/landing \
+          --gold /opt/spark-data/gold
+        """,
+    )
+
     
     # TODO: Set dependencies
-    # ingest_kafka >> spark_etl >> validate
-    pass
+    ingest_kafka >> spark_etl #>> validate
+    

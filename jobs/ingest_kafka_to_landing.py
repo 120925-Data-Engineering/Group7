@@ -27,6 +27,7 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     consumer = KafkaConsumer(
         topic,
         bootstrap_servers = ['kafka:9092'],
+        group_id = f'{topic}_consumer',
         auto_offset_reset = 'earliest',
         enable_auto_commit = False,
         value_deserializer = lambda v: json.loads(v.decode('utf-8'))
@@ -36,7 +37,7 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     start = time.time()
     #consume messages in a timed window
     while time.time() - start < batch_duration_sec:
-        records = consumer.poll(timeout_ms=500)
+        records = consumer.poll(timeout_ms=1000)
         for _, batch in records.items():
             for record in batch:
                 messages.append(record.value)
@@ -53,7 +54,7 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     filepath = os.path.join(topic_dir, filename)
 
     with open(filepath, 'w') as json_file:
-        for mes in message:
+        for mes in messages:
             json_file.write(json.dumps(mes) + '\n')
 
     consumer.commit()
@@ -64,7 +65,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Running Kafka Consumer")
     parser.add_argument("--topic", required=True, help="Topic Name")
     parser.add_argument("--duration", type=int, default=30, help="Duration")
-    parser.add_argument("--output", default="/data/landing", help="Output Path")
+    parser.add_argument("--output", default="/opt/spark-data/landing", help="Output Path")
 
     args = parser.parse_args()
 
