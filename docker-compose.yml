@@ -17,12 +17,12 @@ services:
       - zookeeper_data:/var/lib/zookeeper/data
       - zookeeper_logs:/var/lib/zookeeper/log
     healthcheck:
-      test: [ "CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok" ]
+      test: [ "CMD-SHELL", "printf 'srvr' | nc localhost 2181 | grep -q Zookeeper" ]
       interval: 10s
       timeout: 5s
       retries: 5
-      networks:
-        - streamflow-network
+    networks:
+      - streamflow-network
 
   # =============================================================================
   # KAFKA (Confluent Platform)
@@ -75,56 +75,40 @@ services:
       - streamflow-network
 
   # =============================================================================
-  # SPARK (Master + Worker) - Using official Apache Spark image
+  # SPARK (Master + Worker) - Running as root
   # =============================================================================
-  # Init container to set up volume permissions
-  spark-init:
-    image: busybox
-    container_name: streamflow-spark-init
-    command: [ "sh", "-c", "mkdir -p /opt/spark-data/landing /opt/spark-data/gold && chmod -R 777 /opt/spark-data" ]
-    volumes:
-      - spark_data:/opt/spark-data
-    networks:
-      - streamflow-network
-
   spark-master:
-    image: apache/spark:3.5.0
+    image: bitnamilegacy/spark:3.5
     container_name: streamflow-spark-master
     user: root
     ports:
       - "7077:7077"
       - "8081:8080"
     environment:
+      - SPARK_MODE=master
       - SPARK_MASTER_HOST=spark-master
-      - SPARK_NO_DAEMONIZE=true
-    command: [ "/opt/spark/sbin/start-master.sh" ]
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
     volumes:
       - ./jobs:/opt/spark-jobs
-      - spark_data:/opt/spark-data
-    depends_on:
-      spark-init:
-        condition: service_completed_successfully
+      - ./data:/opt/spark-data
     networks:
       - streamflow-network
 
   spark-worker:
-    image: apache/spark:3.5.0
+    image: bitnamilegacy/spark:3.5
     container_name: streamflow-spark-worker
     user: root
     depends_on:
-      spark-init:
-        condition: service_completed_successfully
-      spark-master:
-        condition: service_started
+      - spark-master
     environment:
-      - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
       - SPARK_WORKER_MEMORY=2G
       - SPARK_WORKER_CORES=2
-      - SPARK_NO_DAEMONIZE=true
-    command: [ "/opt/spark/sbin/start-worker.sh", "spark://spark-master:7077" ]
     volumes:
       - ./jobs:/opt/spark-jobs
-      - spark_data:/opt/spark-data
+      - ./data:/opt/spark-data
     networks:
       - streamflow-network
   
@@ -158,8 +142,6 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: streamflow-airflow
-    # Run as root to match Spark container permissions for shared volume access
-    user: root
     ports:
       - "8082:8080"
     environment:
@@ -175,9 +157,8 @@ services:
 
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./scripts:/opt/airflow/scripts
       - ./jobs:/opt/spark-jobs
-      - spark_data:/opt/spark-data
+      - ./data:/opt/spark-data
       - ./logs:/opt/airflow/logs
       - ./producers:/opt/producers
       - airflow_data:/opt/airflow
