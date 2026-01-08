@@ -8,9 +8,13 @@ Pattern: ./data/landing/*.json -> (This Job) -> ./data/gold/
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
-from jobs import spark_session_factory
+from spark_session_factory import create_spark_session
 import argparse
+from extract import extract
+from load import load
+from transform import transform
 
+#Convert args.config to dict 
 def helper(args_config: list) -> dict:
     config_dict = None
     if args_config:
@@ -29,12 +33,14 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
         input_path: Landing zone path (e.g., '/opt/spark-data/landing/*.json')
         output_path: Gold zone path (e.g., '/opt/spark-data/gold')
     """
-    # TODO: Implement
-    pass
+    user_events_df, transaction_events_df = extract(spark, input_path)
+    daily_revenue, customer_monthly_spent = transform(user_events_df, transaction_events_df)
+    daily_ok = load(daily_revenue, f"{output_path}/daily_revenue")
+    customer_monthly_ok = load(customer_monthly_spent, f"{output_path}/customer_monthly_spent")
+    print(f'ETL JOB DONE!!!!')
 
 
 if __name__ == "__main__":
-    # TODO: Create SparkSession, parse args, run ETL    
     #For SparkSession
     parser = argparse.ArgumentParser(description='ETL Job')
     parser.add_argument('--name', default='Group7-Pipeline', help='App Name')
@@ -51,10 +57,11 @@ if __name__ == "__main__":
     config_dict = None
     if args.config:
         config_dict = helper(args.config)
-    spark = spark_session_factory(app_name=args.name, master=args.master, config_overrides=config_dict)
+    spark = create_spark_session(app_name=args.name, master=args.master, config_overrides=config_dict)
 
     try:
         run_etl(spark=spark, input_path=args.landing, output_path=args.gold)
+        print('ETL JOB Successful')
     except Exception as e:
         print(f'ETL job failed: {e}')
     finally:

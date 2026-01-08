@@ -111,6 +111,28 @@ services:
       - ./data:/opt/spark-data
     networks:
       - streamflow-network
+  
+  # =============================================================================
+  # POSTGRESQL (Airflow Metadata Database)
+  # =============================================================================
+  postgres:
+    image: postgres:13
+    container_name: pipeline-postgres-airflow
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "airflow" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - streamflow-network
+   
 
   # =============================================================================
   # AIRFLOW (Custom Image with Spark Client)
@@ -124,19 +146,21 @@ services:
       - "8082:8080"
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
-      - AIRFLOW__CORE__FERNET_KEY=your-fernet-key-here-replace-in-production
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__FERNET_KEY=zTvhZH8vXj5lZK8bT9nxC3wR2fHgJ6mN4pQ7sU0vY1c=
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
       - AIRFLOW__WEBSERVER__SECRET_KEY=streamflow-secret-key
       - _AIRFLOW_DB_MIGRATE=true
       - _AIRFLOW_WWW_USER_CREATE=true
       - _AIRFLOW_WWW_USER_USERNAME=admin
       - _AIRFLOW_WWW_USER_PASSWORD=admin
+
     volumes:
       - ./dags:/opt/airflow/dags
       - ./jobs:/opt/spark-jobs
       - ./data:/opt/spark-data
       - ./logs:/opt/airflow/logs
+      - ./producers:/opt/producers
       - airflow_data:/opt/airflow
     command: standalone
     healthcheck:
@@ -149,6 +173,8 @@ services:
         condition: service_healthy
       spark-master:
         condition: service_started
+      postgres:
+        condition: service_healthy
     networks:
       - streamflow-network
 
@@ -164,3 +190,4 @@ volumes:
   zookeeper_logs:
   kafka_data:
   airflow_data:
+  postgres_data:

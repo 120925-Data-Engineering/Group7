@@ -28,4 +28,4 @@ ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 USER airflow
 
 # Install Python dependencies for Kafka integration
-RUN pip install --no-cache-dir kafka-python pyspark==${SPARK_VERSION}
+RUN pip install --no-cache-dir kafka-python faker pyspark==${SPARK_VERSION}
