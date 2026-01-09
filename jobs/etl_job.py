@@ -44,7 +44,7 @@ if __name__ == "__main__":
     #For SparkSession
     parser = argparse.ArgumentParser(description='ETL Job')
     parser.add_argument('--name', default='Group7-Pipeline', help='App Name')
-    parser.add_argument('--master', help='Spark Master URL')
+    parser.add_argument('--master', default='local[*]', help='Spark Master URL')
     #Parsing arguments for spark config (OPTIONAL) 
     #spark.config works with key,value pairs so have to convert to dictionary
     parser.add_argument('--config', action='append',help='Spark Configurations (OPTIONAL)')

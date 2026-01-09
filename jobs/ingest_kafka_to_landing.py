@@ -64,7 +64,7 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Running Kafka Consumer")
     parser.add_argument("--topic", required=True, help="Topic Name")
-    parser.add_argument("--duration", type=int, default=30, help="Duration")
+    parser.add_argument("--duration", type=int, default=5, help="Duration")
     parser.add_argument("--output", default="/opt/spark-data/landing", help="Output Path")
 
     args = parser.parse_args()
