@@ -9,7 +9,7 @@ from typing import Optional
 
 def create_spark_session(
     app_name: str,
-    master: str = "local[*]",
+    master: str,
     config_overrides: Optional[dict] = None
 ) -> SparkSession:
     """
