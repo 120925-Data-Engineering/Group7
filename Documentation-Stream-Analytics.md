@@ -42,63 +42,40 @@ Below is the high-level architecture of our stream analytics pipeline:
 ```
 
 ## Design Decisions
-
-*left this blank for now *
+- Used Spark DataFrames for optimized batch analytics and maintainability.
+- Isolated Kafka consumers per topic to improve fault tolerance, and enable parallel processing
+- Used Parquet because it’s columnar, compressed, and much faster for Spark analytics
+- Command-line arguments (argparse) are used to dynamically configure DAG execution parameters (e.g., input paths, topics, durations) without modifying code.
 
 ## Setup Instructions
 
-### 1. Start the Platform
+### 1. Start Docker 
 
-```bash
+```
 docker compose up -d --build
 ```
 
 ### 2. Run Kafka Producers
 
-```bash
+```
 docker compose exec airflow python /opt/producers/user_events_producer.py
 docker compose exec airflow python /opt/producers/transaction_events_producer.py
 ```
 
-Stop the producers using `CTRL + C` after sufficient data has been generated.
+### 3. Run DAG in Docker
 
-### 3. Run Kafka Batch Consumers
-
-```bash
-docker compose exec airflow python /opt/spark-jobs/ingest_kafka_to_landing.py --topic user_events --duration 30
-docker compose exec airflow python /opt/spark-jobs/ingest_kafka_to_landing.py --topic transaction_events --duration 30
+```
+docker compose exec airflow airflow dags trigger streamflow_main
 ```
 
-Verify landing files:
+### 4. Or Run DAG in Airflow Web UI
 
-```bash
-ls data/landing
+```
+http://localhost:8082/home
 ```
 
-> Do not rerun producers to avoid duplicate data.
 
-### 4. Run Spark ETL Job
-
-```bash
-docker compose exec spark-master spark-submit /opt/spark-jobs/etl_job.py \
-  --name Group7-Pipeline \
-  --master spark://spark-master:7077 \
-  --landing /opt/spark-data/landing \
-  --gold /opt/spark-data/gold
-```
 
 Verify outputs:
 
-```bash
-ls data/gold
-```
-Should see .parquet files in gold
-### 5. Airflow DAG Testing
-
-```bash
-docker compose exec airflow ls /opt/spark-data
-```
-
-Access the Airflow UI at:
-
-http://localhost:8082 
+Should see .parquet files in Gold
