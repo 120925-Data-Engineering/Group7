@@ -41,3 +41,16 @@ Run etl job - docker compose exec spark-master spark-submit /opt/spark-jobs/etl_
 - Users that has chargeback more than 5 in a month
 
 - Compare the purchases made by US consumers to others
+
+# Dockerfile.airflow for MAC
+# Install OpenJDK-17 (Required for Spark 3.5)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openjdk-17-jre-headless procps && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64
+
+- Have to rebuild docker by:
+    docker compose build --no-cache
+    docker compose up -d --force-recreate

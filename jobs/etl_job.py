@@ -34,9 +34,19 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
         output_path: Gold zone path (e.g., '/opt/spark-data/gold')
     """
     user_events_df, transaction_events_df = extract(spark, input_path)
-    daily_revenue, customer_monthly_spent = transform(user_events_df, transaction_events_df)
+    (
+        daily_revenue, customer_monthly_spent, 
+        transaction_evts, user_evts,
+        cart_to_purchase, ranked_spent
+    ) = transform(user_events_df, transaction_events_df)
+    
     daily_ok = load(daily_revenue, f"{output_path}/daily_revenue")
     customer_monthly_ok = load(customer_monthly_spent, f"{output_path}/customer_monthly_spent")
+    user_evts_ok = load(user_evts, f"{output_path}/user_events" )
+    transaction_evts_ok = load(transaction_evts, f"{output_path}/transaction_events")
+    cart_to_purchase_ok = load(cart_to_purchase, f"{output_path}/cart_to_purchase")
+    ranked_spent_ok = load(ranked_spent, f"{output_path}/customer_ranked")
+    
     print(f'ETL JOB DONE!!!!')
 
 
