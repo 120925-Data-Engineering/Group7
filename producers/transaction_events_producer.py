@@ -19,6 +19,14 @@ from kafka import KafkaProducer
 
 
 fake = Faker()
+Faker.seed(42)  # Fixed seed for reproducible user pool
+
+# Shared user pool - generates the same 100 users when seed is fixed
+# This enables joins with user_events_producer.py
+USER_POOL = [Faker().uuid4()[:8] for _ in range(100)]
+
+# Shared product pool - enables joins with user_events_producer.py
+PRODUCT_POOL = [f"PROD_{1000 + i}" for i in range(200)]
 
 TRANSACTION_TYPES = ["purchase", "refund", "chargeback"]
 PAYMENT_METHODS = ["credit_card", "debit_card", "paypal", "apple_pay", "google_pay", "bank_transfer"]
@@ -31,7 +39,7 @@ def generate_product():
     """Generate a single product item."""
     category = random.choice(PRODUCT_CATEGORIES)
     return {
-        "product_id": f"PROD_{random.randint(1000, 9999)}",
+        "product_id": random.choice(PRODUCT_POOL),  # Select from shared pool for joinability
         "product_name": f"{fake.word().capitalize()} {category.capitalize()}",
         "category": category,
         "quantity": random.randint(1, 5),
@@ -41,7 +49,7 @@ def generate_product():
 
 def generate_transaction_event():
     """Generate a single mock transaction event."""
-    user_id = fake.uuid4()[:8]
+    user_id = random.choice(USER_POOL)  # Select from shared pool for joinability
     transaction_type = random.choices(
         TRANSACTION_TYPES, 
         weights=[0.85, 0.12, 0.03]  # 85% purchases, 12% refunds, 3% chargebacks
@@ -107,7 +115,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate mock transaction events to Kafka")
     parser.add_argument("--bootstrap-servers", default="kafka:9092", help="Kafka bootstrap servers")
     parser.add_argument("--topic", default="transaction_events", help="Kafka topic name")
-    parser.add_argument("--interval", type=float, default=2.0, help="Seconds between events")
+    parser.add_argument("--interval", type=float, default=1.0, help="Seconds between events")
     parser.add_argument("--count", type=int, default=None, help="Number of events to generate (infinite if not set)")
     args = parser.parse_args()
     

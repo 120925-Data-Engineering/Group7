@@ -47,14 +47,20 @@ with DAG(
     # - spark_etl: spark-submit etl_job.py : done
     # - validate: Check output files: done 
     #part 1) 
-    ingest_kafka = BashOperator(
-        task_id="ingest_kafka",
+    user_consumer = BashOperator(
+        task_id="user_consumer",
         bash_command="""
     python /opt/spark-jobs/ingest_kafka_to_landing.py \
         --topic user_events --duration 30
-    python /opt/spark-jobs/ingest_kafka_to_landing.py \
+    """
+    )
+
+    transaction_consumer = BashOperator(
+        task_id='transaction_consumer',
+        bash_command="""
+        python /opt/spark-jobs/ingest_kafka_to_landing.py \
         --topic transaction_events --duration 30
-    """,
+    """
     )
 
     # 2) Spark ETL
@@ -75,6 +81,5 @@ with DAG(
     python_callable=validate_gold_output,
     )
     
-    # TODO: Set dependencies
-    ingest_kafka >> spark_etl >> validate
+    [user_consumer, transaction_consumer] >> spark_etl >> validate
     
