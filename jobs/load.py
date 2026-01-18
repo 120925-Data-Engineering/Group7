@@ -6,7 +6,7 @@ def load (df: DataFrame, output_path:str) -> bool:
         return False
 
     try:
-        df.write.mode('append').parquet(output_path)
+        df.coalesce(1).write.mode('append').parquet(output_path)
         print(f'Successfully wrote {df.count()} records to gold zone')
         return True
     except Exception as e:
