@@ -2,31 +2,60 @@
 User Events Producer
 Generates mock user activity events and publishes them to a Kafka topic.
 
-Usage:
-    python user_events_producer.py --bootstrap-servers localhost:9092 --topic user_events --interval 1.0
+================================================================================
+USAGE EXAMPLES:
+================================================================================
 
-Dependencies:
-    pip install kafka-python faker
+1. REAL-TIME MODE (default) - Continuous streaming with delay:
+   python user_events_producer.py
+
+2. BULK MODE - Generate 50,000 events as fast as possible:
+   python user_events_producer.py --bulk --count 50000
+
+3. BULK + CONTINUE - Generate 50k bulk then stream:
+   python user_events_producer.py --bulk --count 50000 --continue-after
+
+4. CUSTOM INTERVAL - Slower/faster streaming:
+   python user_events_producer.py --interval 0.5  # 2 events/sec
+   python user_events_producer.py --interval 2.0  # 1 event every 2 sec
+
+================================================================================
+DEPENDENCIES:
+   pip install kafka-python faker
+================================================================================
 """
 
 import argparse
 import json
 import time
 import random
+import os
 from datetime import datetime
 from faker import Faker
 from kafka import KafkaProducer
 
 
 fake = Faker()
-Faker.seed(42)  # Fixed seed for reproducible user pool
 
-# Shared user pool - generates the same 100 users when seed is fixed
-# This enables joins with transaction_events_producer.py
-USER_POOL = [Faker().uuid4()[:8] for _ in range(100)]
+# Load dimension data from JSON files for consistent joins
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(SCRIPT_DIR, "data")
 
-# Shared product pool - enables joins with transaction_events_producer.py
-PRODUCT_POOL = [f"PROD_{1000 + i}" for i in range(200)]
+def load_dimension_ids():
+    """Load user and product IDs from dimension JSON files."""
+    customers_file = os.path.join(DATA_DIR, "customers.json")
+    products_file = os.path.join(DATA_DIR, "products.json")
+    
+    with open(customers_file, "r") as f:
+        customers = json.load(f)
+    with open(products_file, "r") as f:
+        products = json.load(f)
+    
+    user_ids = [c["user_id"] for c in customers]
+    product_ids = [p["product_id"] for p in products]
+    return user_ids, product_ids
+
+USER_POOL, PRODUCT_POOL = load_dimension_ids()
 
 EVENT_TYPES = ["login", "logout", "page_view", "click", "search", "add_to_cart", "remove_from_cart"]
 PAGES = ["home", "products", "product_detail", "cart", "checkout", "profile", "settings", "help"]
@@ -84,31 +113,66 @@ def main():
     parser = argparse.ArgumentParser(description="Generate mock user events to Kafka")
     parser.add_argument("--bootstrap-servers", default="kafka:9092", help="Kafka bootstrap servers")
     parser.add_argument("--topic", default="user_events", help="Kafka topic name")
-    parser.add_argument("--interval", type=float, default=1.0, help="Seconds between events")
+    parser.add_argument("--interval", type=float, default=1.0, help="Seconds between events (ignored in bulk mode)")
     parser.add_argument("--count", type=int, default=None, help="Number of events to generate (infinite if not set)")
+    parser.add_argument("--bulk", action="store_true", help="Bulk mode: generate events as fast as possible (no delay)")
+    parser.add_argument("--continue-after", action="store_true", help="After bulk count reached, continue in real-time mode")
     args = parser.parse_args()
     
     producer = create_producer(args.bootstrap_servers)
     print(f"Connected to Kafka at {args.bootstrap_servers}")
     print(f"Publishing to topic: {args.topic}")
-    print(f"Interval: {args.interval}s")
+    if args.bulk:
+        print(f"Mode: BULK (max speed)")
+        if args.count:
+            print(f"Target: {args.count:,} events")
+    else:
+        print(f"Mode: Real-time (interval: {args.interval}s)")
     print("-" * 50)
     
     event_count = 0
+    bulk_complete = False
+    start_time = time.time()
+    
     try:
-        while args.count is None or event_count < args.count:
+        while args.count is None or event_count < args.count or (bulk_complete and args.continue_after):
             event = generate_user_event()
             key = event["user_id"]
             
             producer.send(args.topic, key=key, value=event)
             event_count += 1
             
-            print(f"[{event_count}] {event['event_type']:15} | user={event['user_id']} | page={event['page']}")
+            # Progress logging
+            if args.bulk and event_count % 5000 == 0:
+                elapsed = time.time() - start_time
+                rate = event_count / elapsed
+                print(f"[BULK] {event_count:,} events | {rate:.0f} events/sec")
+            elif not args.bulk:
+                print(f"[{event_count}] {event['event_type']:15} | user={event['user_id']} | page={event['page']}")
             
-            time.sleep(args.interval)
+            # Handle bulk -> continue transition
+            if args.bulk and args.count and event_count >= args.count and not bulk_complete:
+                bulk_complete = True
+                elapsed = time.time() - start_time
+                print(f"\n{'='*50}")
+                print(f"BULK COMPLETE: {event_count:,} events in {elapsed:.1f}s ({event_count/elapsed:.0f}/sec)")
+                print(f"{'='*50}")
+                if args.continue_after:
+                    print(f"Continuing in real-time mode (interval: {args.interval}s)...")
+                    args.count = None  # Allow infinite
+                    args.bulk = False
+                else:
+                    break
+            
+            # Delay only in non-bulk mode
+            if not args.bulk:
+                time.sleep(args.interval)
+                
     except KeyboardInterrupt:
-        print(f"\nStopped. Total events published: {event_count}")
+        elapsed = time.time() - start_time
+        print(f"\nStopped. Total events: {event_count:,} in {elapsed:.1f}s")
     finally:
+        producer.flush()
         producer.close()
 
 
