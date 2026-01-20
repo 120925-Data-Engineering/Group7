@@ -54,14 +54,17 @@ def put_file_to_stage():
         (f'{LOCAL_DIR}/gold/user_activities/*.parquet', 'user_activities')
     ]
     for path, prefix in files:
-        sql = f'PUT file://{path} {STAGE}/{prefix} AUTO_COMPRESS=TRUE OVERWRITE=TRUE;'
+        sql = f'PUT file://{path} {STAGE}/{prefix} AUTO_COMPRESS=TRUE OVERWRITE=FALSE;'
         hook.run(sql)
+
+
 
 with DAG(
     dag_id='streamflow_main',
     default_args=default_args,
     start_date=datetime(2026, 1, 18),
     schedule_interval=None,
+    #schedule=timedelta(seconds=30),
     catchup=False,
 ) as dag:
     
