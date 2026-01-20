@@ -9,6 +9,8 @@ from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
+from pathlib import Path
+from airflow.utils.helpers import cross_downstream
 
 import os
 
@@ -39,6 +41,11 @@ def validate_gold_output() -> None:
 
 STAGE = '@BRONZE.SPARK_STAGE'
 LOCAL_DIR = '/opt/spark-data'
+SQL_DIR = Path(__file__).parent / "sql" / "silver"
+
+def read_sql(filename: str) -> str:
+    return (SQL_DIR/filename).read_text()
+
 def put_file_to_stage():
     hook = SnowflakeHook(snowflake_conn_id = 'snowflake_connection')
     files = [
@@ -48,6 +55,7 @@ def put_file_to_stage():
     for path, prefix in files:
         sql = f'PUT file://{path} {STAGE}/{prefix} AUTO_COMPRESS=TRUE OVERWRITE=TRUE;'
         hook.run(sql)
+
 with DAG(
     dag_id='streamflow_main',
     default_args=default_args,
@@ -104,10 +112,15 @@ with DAG(
         task_id='copy_trans_command',
         snowflake_conn_id='snowflake_connection',
         sql="""
-        COPY INTO BRONZE.RAW_TRANSACTIONS
-        FROM @BRONZE.SPARK_STAGE/transactions/
+        COPY INTO BRONZE.RAW_TRANSACTIONS(raw, source_file, row_num)
+        FROM(
+            SELECT
+                $1 as raw,
+                METADATA$FILENAME as source_file,
+                METADATA$FILE_ROW_NUMBER as row_num
+            FROM @BRONZE.SPARK_STAGE/transactions/
+        )
         FILE_FORMAT=(FORMAT_NAME = BRONZE.file_parquet)
-        MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
         ON_ERROR='ABORT_STATEMENT';
         """
     )
@@ -116,12 +129,53 @@ with DAG(
         task_id='copy_user_act_command',
         snowflake_conn_id='snowflake_connection',
         sql="""
-        COPY INTO BRONZE.RAW_USER_EVENTS
-        FROM @BRONZE.SPARK_STAGE/user_activities/
+        COPY INTO BRONZE.RAW_USER_EVENTS(raw, source_file, row_num)
+        FROM (
+            SELECT
+                $1 as raw,
+                METADATA$FILENAME as source_file,
+                METADATA$FILE_ROW_NUMBER as row_num
+            FROM @BRONZE.SPARK_STAGE/user_activities/
+        )
         FILE_FORMAT=(FORMAT_NAME = BRONZE.file_parquet)
-        MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE
         ON_ERROR='ABORT_STATEMENT';
         """
     )
+
+    load_silver_transactions = SnowflakeOperator(
+        task_id='load_silver_transactions',
+        snowflake_conn_id='snowflake_connection',
+        sql = read_sql('merge_stg_transactions.sql')
+    )
+
+    #load_silver_transaction_items = SnowflakeOperator(
+    #    task_id='load_silver_transaction_items',
+    #    snowflake_conn_id='snowflake_connection',
+    #    sql = read_sql('merge_stg_transaction_items.sql')
+    #)
+
+    load_silver_user_events = SnowflakeOperator(
+        task_id='load_silver_user_events',
+        snowflake_conn_id='snowflake_connection',
+        sql = read_sql('merge_stg_user_events.sql')
+    )
+
+    load_silver_product = SnowflakeOperator(
+        task_id='load_silver_product',
+        snowflake_conn_id='snowflake_connection',
+        sql = read_sql('merge_stg_products.sql')
+    )
+
+    load_silver_customers = SnowflakeOperator(
+        task_id='load_silver_customers',
+        snowflake_conn_id='snowflake_connection',
+        sql = read_sql('merge_stg_customers.sql')
+    )
     
-    [user_consumer, transaction_consumer] >> spark_etl >> validate >> upload_to_stage >> [copy_trans_to_table, copy_user_act_to_table]
+    
+    [user_consumer, transaction_consumer] >> spark_etl >> validate >> upload_to_stage 
+    upload_to_stage >> [copy_trans_to_table, copy_user_act_to_table] 
+    cross_downstream(
+        [copy_trans_to_table, copy_user_act_to_table],
+        [load_silver_customers, load_silver_product, load_silver_transactions, load_silver_user_events],
+    )    
