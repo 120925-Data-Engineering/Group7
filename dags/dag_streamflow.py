@@ -11,6 +11,7 @@ from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from pathlib import Path
 from airflow.utils.helpers import cross_downstream
+from airflow.utils.task_group import TaskGroup
 
 import os
 
@@ -41,7 +42,7 @@ def validate_gold_output() -> None:
 
 STAGE = '@BRONZE.SPARK_STAGE'
 LOCAL_DIR = '/opt/spark-data'
-SQL_DIR = Path(__file__).parent / "sql" / "silver"
+SQL_DIR = Path(__file__).parent / "sql"
 
 def read_sql(filename: str) -> str:
     return (SQL_DIR/filename).read_text()
@@ -145,37 +146,57 @@ with DAG(
     load_silver_transactions = SnowflakeOperator(
         task_id='load_silver_transactions',
         snowflake_conn_id='snowflake_connection',
-        sql = read_sql('merge_stg_transactions.sql')
+        sql = read_sql('silver/merge_stg_transactions.sql')
     )
-
-    #load_silver_transaction_items = SnowflakeOperator(
-    #    task_id='load_silver_transaction_items',
-    #    snowflake_conn_id='snowflake_connection',
-    #    sql = read_sql('merge_stg_transaction_items.sql')
-    #)
 
     load_silver_user_events = SnowflakeOperator(
         task_id='load_silver_user_events',
         snowflake_conn_id='snowflake_connection',
-        sql = read_sql('merge_stg_user_events.sql')
+        sql = read_sql('silver/merge_stg_user_events.sql')
     )
 
     load_silver_product = SnowflakeOperator(
         task_id='load_silver_product',
         snowflake_conn_id='snowflake_connection',
-        sql = read_sql('merge_stg_products.sql')
+        sql = read_sql('silver/merge_stg_products.sql')
     )
 
     load_silver_customers = SnowflakeOperator(
         task_id='load_silver_customers',
         snowflake_conn_id='snowflake_connection',
-        sql = read_sql('merge_stg_customers.sql')
+        sql = read_sql('silver/merge_stg_customers.sql')
     )
     
+    with TaskGroup('gold_layer') as gold_layer:
     
+        gold_daily_revenue = SnowflakeOperator(
+            task_id='gold_daily_revenue',
+            snowflake_conn_id='snowflake_connection',
+            sql = read_sql('gold/daily_revenue.sql')
+        )
+    
+        gold_rev_by_category = SnowflakeOperator(
+            task_id='gold_rev_by_category',
+            snowflake_conn_id='snowflake_connection',
+            sql = read_sql('gold/revenue_by_category.sql')
+        )
+        
+        gold_refund_by_category = SnowflakeOperator(
+            task_id='gold_refund_by_category',
+            snowflake_conn_id='snowflake_connection',
+            sql = read_sql('gold/refund_by_category.sql')
+        )
+    
+        gold_customer_daily_spend = SnowflakeOperator(
+            task_id='gold_customer_daily_spent',
+            snowflake_conn_id='snowflake_connection',
+            sql = read_sql('gold/customer_daily_spend.sql')
+        )
+        
     [user_consumer, transaction_consumer] >> spark_etl >> validate >> upload_to_stage 
     upload_to_stage >> [copy_trans_to_table, copy_user_act_to_table] 
     cross_downstream(
         [copy_trans_to_table, copy_user_act_to_table],
         [load_silver_customers, load_silver_product, load_silver_transactions, load_silver_user_events],
-    )    
+    )  
+    load_silver_transactions >> gold_layer  
