@@ -1,12 +1,12 @@
 MERGE INTO GOLD.FACT_DAILY_REVENUE t
 USING (
   SELECT
-    CAST(timestamp AS DATE) AS sales_date,
-    COUNT(*) AS orders,
+    transaction_date AS sales_date,
+    COUNT_IF(transaction_type = 'purchase') AS orders,
     SUM(total) AS revenue,
     SUM(tax) AS tax,
-    ROUND(SUM(total) / NULLIF(COUNT(*), 0), 2) AS avg_order_value
-  FROM SILVER.STG_TRANSACTIONS
+    ROUND(SUM(total) / NULLIF(COUNT_IF(transaction_type='purchase'), 0), 2) AS avg_order_value
+  FROM GOLD.FACT_TRANSACTIONS
   WHERE status = 'completed'
   GROUP BY sales_date
 ) s

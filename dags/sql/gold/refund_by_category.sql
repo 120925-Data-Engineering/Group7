@@ -1,14 +1,14 @@
 MERGE INTO GOLD.FACT_DAILY_REFUNDS_BY_CATEGORY t
 USING (
   SELECT
-    CAST(tx.timestamp AS DATE) AS sales_date,
+    CAST(tx.transaction_date AS DATE) AS sales_date,
     i.category,
     COUNT(DISTINCT tx.transaction_id) AS refund_count,
     SUM(ABS(i.item_subtotal)) AS refund_amount
-  FROM SILVER.STG_TRANSACTION_ITEMS i
-  JOIN SILVER.STG_TRANSACTIONS tx
+  FROM GOLD.TRANSACTION_ITEMS i
+  JOIN GOLD.FACT_TRANSACTIONS tx
     ON tx.transaction_id = i.transaction_id
-  WHERE tx.transaction_type = 'refund'
+  WHERE (tx.transaction_type = 'refund' or tx.transaction_type = 'chargeback') and tx.status = 'completed'
   GROUP BY sales_date, i.category
 ) s
 ON t.sales_date = s.sales_date AND t.category = s.category

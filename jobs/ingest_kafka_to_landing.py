@@ -69,8 +69,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    consume_batch(
-        topic=args.topic,
-        batch_duration_sec=args.duration,
-        output_path=args.output
-    )
+    try:
+        while True:
+            consume_batch(
+            topic=args.topic,
+            batch_duration_sec=args.duration,
+            output_path=args.output)
+            time.sleep(5)
+    except KeyboardInterrupt:
+        print('Stopped!')

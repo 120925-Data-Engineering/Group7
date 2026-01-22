@@ -5,7 +5,7 @@ USING (
     category,
     SUM(quantity) AS units_sold,
     SUM(item_subtotal) AS revenue
-  FROM SILVER.STG_TRANSACTION_ITEMS
+  FROM GOLD.TRANSACTION_ITEMS
   GROUP BY sales_date, category
 ) s
 ON t.sales_date = s.sales_date AND t.category = s.category

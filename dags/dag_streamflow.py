@@ -63,7 +63,7 @@ with DAG(
     dag_id='streamflow_main',
     default_args=default_args,
     start_date=datetime(2026, 1, 18),
-    schedule_interval=None,
+    schedule_interval="*/2 * * * *",
     #schedule=timedelta(seconds=30),
     catchup=False,
 ) as dag:
@@ -73,21 +73,21 @@ with DAG(
     # - spark_etl: spark-submit etl_job.py : done
     # - validate: Check output files: done 
     #part 1) 
-    user_consumer = BashOperator(
-        task_id="user_consumer",
-        bash_command="""
-    python /opt/spark-jobs/ingest_kafka_to_landing.py \
-        --topic user_events --duration 5
-    """
-    )
-
-    transaction_consumer = BashOperator(
-        task_id='transaction_consumer',
-        bash_command="""
-        python /opt/spark-jobs/ingest_kafka_to_landing.py \
-        --topic transaction_events --duration 5
-    """
-    )
+    #user_consumer = BashOperator(
+    #    task_id="user_consumer",
+    #    bash_command="""
+    #python /opt/spark-jobs/ingest_kafka_to_landing.py \
+    #    --topic user_events --duration 5
+    #"""
+    #)
+#
+    #transaction_consumer = BashOperator(
+    #    task_id='transaction_consumer',
+    #    bash_command="""
+    #    python /opt/spark-jobs/ingest_kafka_to_landing.py \
+    #    --topic transaction_events --duration 5
+    #"""
+    #)
 
     # 2) Spark ETL
     spark_etl = BashOperator(
@@ -171,6 +171,24 @@ with DAG(
     )
     
     with TaskGroup('gold_layer') as gold_layer:
+
+        load_dim_date = SnowflakeOperator(
+        task_id='load_dim_date',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/dim_date.sql')
+        )
+
+        load_dim_customer = SnowflakeOperator(
+        task_id='load_dim_customer',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/dim_customer.sql')
+        )
+
+        load_dim_product = SnowflakeOperator(
+        task_id='load_dim_product',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/dim_product.sql')
+    )   
     
         gold_daily_revenue = SnowflakeOperator(
             task_id='gold_daily_revenue',
@@ -178,6 +196,24 @@ with DAG(
             sql = read_sql('gold/daily_revenue.sql')
         )
     
+        load_fact_transactions = SnowflakeOperator(
+        task_id='load_fact_transactions',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/fact_transactions.sql')
+        )
+
+        load_fact_user_events = SnowflakeOperator(
+        task_id='load_fact_user_events',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/fact_user_events.sql')
+        )
+
+        load_fact_transaction_items = SnowflakeOperator(
+        task_id='load_fact_transaction_items',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/transaction_items.sql')
+        )
+
         gold_rev_by_category = SnowflakeOperator(
             task_id='gold_rev_by_category',
             snowflake_conn_id='snowflake_connection',
@@ -195,8 +231,38 @@ with DAG(
             snowflake_conn_id='snowflake_connection',
             sql = read_sql('gold/customer_daily_spend.sql')
         )
+
+        fact_customer_risk = SnowflakeOperator(
+            task_id='fact_customer_risk',
+            snowflake_conn_id='snowflake_connection',
+            sql=read_sql('gold/fact_customer_risk.sql')
+        )
+
+        fact_refund_chargeback_items = SnowflakeOperator(
+            task_id='fact_refund_chargeback_items',
+            snowflake_conn_id='snowflake_connection',
+            sql=read_sql('gold/fact_refund_chargeback_items.sql')
+        )
         
-    [user_consumer, transaction_consumer] >> spark_etl >> validate >> upload_to_stage 
+        cross_downstream(
+            [load_dim_date, load_dim_customer, load_dim_product],
+            [load_fact_transactions, load_fact_user_events, load_fact_transaction_items]
+        )
+        cross_downstream(
+            [
+            load_dim_date, load_dim_customer, load_dim_product,
+            load_fact_transactions, load_fact_user_events, load_fact_transaction_items
+            ], [
+            gold_daily_revenue,
+            gold_rev_by_category,
+            gold_refund_by_category,
+            gold_customer_daily_spend,
+            fact_customer_risk,
+            fact_refund_chargeback_items
+        ]
+        )
+
+    spark_etl >> validate >> upload_to_stage 
     upload_to_stage >> [copy_trans_to_table, copy_user_act_to_table] 
     cross_downstream(
         [copy_trans_to_table, copy_user_act_to_table],
