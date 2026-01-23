@@ -7,6 +7,12 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
+from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
+from pathlib import Path
+from airflow.utils.helpers import cross_downstream
+from airflow.utils.task_group import TaskGroup
+
 import os
 
 # TODO: Add retry logic, email alerts, etc.
@@ -34,11 +40,31 @@ def validate_gold_output() -> None:
 
     print(f" Validation successful: Gold data exists at {gold_path}")
 
+STAGE = '@BRONZE.SPARK_STAGE'
+LOCAL_DIR = '/opt/spark-data'
+SQL_DIR = Path(__file__).parent / "sql"
+
+def read_sql(filename: str) -> str:
+    return (SQL_DIR/filename).read_text()
+
+def put_file_to_stage():
+    hook = SnowflakeHook(snowflake_conn_id = 'snowflake_connection')
+    files = [
+        (f'{LOCAL_DIR}/gold/transactions/*.parquet', 'transactions'),
+        (f'{LOCAL_DIR}/gold/user_activities/*.parquet', 'user_activities')
+    ]
+    for path, prefix in files:
+        sql = f'PUT file://{path} {STAGE}/{prefix} AUTO_COMPRESS=TRUE OVERWRITE=FALSE;'
+        hook.run(sql)
+
+
+
 with DAG(
     dag_id='streamflow_main',
     default_args=default_args,
-    start_date=datetime(2024, 1, 1),
-    schedule_interval=None,
+    start_date=datetime(2026, 1, 18),
+    schedule_interval="*/2 * * * *",
+    #schedule=timedelta(seconds=30),
     catchup=False,
 ) as dag:
     
@@ -47,21 +73,21 @@ with DAG(
     # - spark_etl: spark-submit etl_job.py : done
     # - validate: Check output files: done 
     #part 1) 
-    user_consumer = BashOperator(
-        task_id="user_consumer",
-        bash_command="""
-    python /opt/spark-jobs/ingest_kafka_to_landing.py \
-        --topic user_events --duration 30
-    """
-    )
-
-    transaction_consumer = BashOperator(
-        task_id='transaction_consumer',
-        bash_command="""
-        python /opt/spark-jobs/ingest_kafka_to_landing.py \
-        --topic transaction_events --duration 30
-    """
-    )
+    #user_consumer = BashOperator(
+    #    task_id="user_consumer",
+    #    bash_command="""
+    #python /opt/spark-jobs/ingest_kafka_to_landing.py \
+    #    --topic user_events --duration 5
+    #"""
+    #)
+#
+    #transaction_consumer = BashOperator(
+    #    task_id='transaction_consumer',
+    #    bash_command="""
+    #    python /opt/spark-jobs/ingest_kafka_to_landing.py \
+    #    --topic transaction_events --duration 5
+    #"""
+    #)
 
     # 2) Spark ETL
     spark_etl = BashOperator(
@@ -80,6 +106,166 @@ with DAG(
     task_id="validate_output",
     python_callable=validate_gold_output,
     )
+
+    upload_to_stage = PythonOperator(
+        task_id='upload_to_internal_stage',
+        python_callable=put_file_to_stage
+    )
+
+    copy_trans_to_table = SnowflakeOperator(
+        task_id='copy_trans_command',
+        snowflake_conn_id='snowflake_connection',
+        sql="""
+        COPY INTO BRONZE.RAW_TRANSACTIONS(raw, source_file, row_num)
+        FROM(
+            SELECT
+                $1 as raw,
+                METADATA$FILENAME as source_file,
+                METADATA$FILE_ROW_NUMBER as row_num
+            FROM @BRONZE.SPARK_STAGE/transactions/
+        )
+        FILE_FORMAT=(FORMAT_NAME = BRONZE.file_parquet)
+        ON_ERROR='ABORT_STATEMENT';
+        """
+    )
+
+    copy_user_act_to_table = SnowflakeOperator(
+        task_id='copy_user_act_command',
+        snowflake_conn_id='snowflake_connection',
+        sql="""
+        COPY INTO BRONZE.RAW_USER_EVENTS(raw, source_file, row_num)
+        FROM (
+            SELECT
+                $1 as raw,
+                METADATA$FILENAME as source_file,
+                METADATA$FILE_ROW_NUMBER as row_num
+            FROM @BRONZE.SPARK_STAGE/user_activities/
+        )
+        FILE_FORMAT=(FORMAT_NAME = BRONZE.file_parquet)
+        ON_ERROR='ABORT_STATEMENT';
+        """
+    )
+
+    load_silver_transactions = SnowflakeOperator(
+        task_id='load_silver_transactions',
+        snowflake_conn_id='snowflake_connection',
+        sql = read_sql('silver/merge_stg_transactions.sql')
+    )
+
+    load_silver_user_events = SnowflakeOperator(
+        task_id='load_silver_user_events',
+        snowflake_conn_id='snowflake_connection',
+        sql = read_sql('silver/merge_stg_user_events.sql')
+    )
+
+    load_silver_product = SnowflakeOperator(
+        task_id='load_silver_product',
+        snowflake_conn_id='snowflake_connection',
+        sql = read_sql('silver/merge_stg_products.sql')
+    )
+
+    load_silver_customers = SnowflakeOperator(
+        task_id='load_silver_customers',
+        snowflake_conn_id='snowflake_connection',
+        sql = read_sql('silver/merge_stg_customers.sql')
+    )
     
-    [user_consumer, transaction_consumer] >> spark_etl >> validate
+    with TaskGroup('gold_layer') as gold_layer:
+
+        load_dim_date = SnowflakeOperator(
+        task_id='load_dim_date',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/dim_date.sql')
+        )
+
+        load_dim_customer = SnowflakeOperator(
+        task_id='load_dim_customer',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/dim_customer.sql')
+        )
+
+        load_dim_product = SnowflakeOperator(
+        task_id='load_dim_product',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/dim_product.sql')
+    )   
     
+        gold_daily_revenue = SnowflakeOperator(
+            task_id='gold_daily_revenue',
+            snowflake_conn_id='snowflake_connection',
+            sql = read_sql('gold/daily_revenue.sql')
+        )
+    
+        load_fact_transactions = SnowflakeOperator(
+        task_id='load_fact_transactions',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/fact_transactions.sql')
+        )
+
+        load_fact_user_events = SnowflakeOperator(
+        task_id='load_fact_user_events',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/fact_user_events.sql')
+        )
+
+        load_fact_transaction_items = SnowflakeOperator(
+        task_id='load_fact_transaction_items',
+        snowflake_conn_id='snowflake_connection',
+        sql=read_sql('gold/transaction_items.sql')
+        )
+
+        gold_rev_by_category = SnowflakeOperator(
+            task_id='gold_rev_by_category',
+            snowflake_conn_id='snowflake_connection',
+            sql = read_sql('gold/revenue_by_category.sql')
+        )
+        
+        gold_refund_by_category = SnowflakeOperator(
+            task_id='gold_refund_by_category',
+            snowflake_conn_id='snowflake_connection',
+            sql = read_sql('gold/refund_by_category.sql')
+        )
+    
+        gold_customer_daily_spend = SnowflakeOperator(
+            task_id='gold_customer_daily_spent',
+            snowflake_conn_id='snowflake_connection',
+            sql = read_sql('gold/customer_daily_spend.sql')
+        )
+
+        fact_customer_risk = SnowflakeOperator(
+            task_id='fact_customer_risk',
+            snowflake_conn_id='snowflake_connection',
+            sql=read_sql('gold/fact_customer_risk.sql')
+        )
+
+        fact_refund_chargeback_items = SnowflakeOperator(
+            task_id='fact_refund_chargeback_items',
+            snowflake_conn_id='snowflake_connection',
+            sql=read_sql('gold/fact_refund_chargeback_items.sql')
+        )
+        
+        cross_downstream(
+            [load_dim_date, load_dim_customer, load_dim_product],
+            [load_fact_transactions, load_fact_user_events, load_fact_transaction_items]
+        )
+        cross_downstream(
+            [
+            load_dim_date, load_dim_customer, load_dim_product,
+            load_fact_transactions, load_fact_user_events, load_fact_transaction_items
+            ], [
+            gold_daily_revenue,
+            gold_rev_by_category,
+            gold_refund_by_category,
+            gold_customer_daily_spend,
+            fact_customer_risk,
+            fact_refund_chargeback_items
+        ]
+        )
+
+    spark_etl >> validate >> upload_to_stage 
+    upload_to_stage >> [copy_trans_to_table, copy_user_act_to_table] 
+    cross_downstream(
+        [copy_trans_to_table, copy_user_act_to_table],
+        [load_silver_customers, load_silver_product, load_silver_transactions, load_silver_user_events],
+    )  
+    load_silver_transactions >> gold_layer  

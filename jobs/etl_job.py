@@ -11,7 +11,7 @@ from pyspark.sql.window import Window
 from spark_session_factory import create_spark_session
 import argparse
 from extract import extract
-from load import load
+from load import load, to_archive
 from transform import transform
 
 #Convert args.config to dict 
@@ -33,8 +33,8 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
         input_path: Landing zone path (e.g., '/opt/spark-data/landing/*.json')
         output_path: Gold zone path (e.g., '/opt/spark-data/gold')
     """
-    user_events_df, transaction_events_df = extract(spark, input_path)
-    (
+    (user_events_df, user_files), (transaction_events_df, trans_files) = extract(spark, input_path)
+    """(
         daily_revenue, customer_monthly_spent, 
         transaction_evts, user_evts,
         cart_to_purchase, ranked_spent
@@ -45,10 +45,16 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
     user_evts_ok = load(user_evts, f"{output_path}/user_events" )
     transaction_evts_ok = load(transaction_evts, f"{output_path}/transaction_events")
     cart_to_purchase_ok = load(cart_to_purchase, f"{output_path}/cart_to_purchase")
-    ranked_spent_ok = load(ranked_spent, f"{output_path}/customer_ranked")
-    
-    print(f'ETL JOB DONE!!!!')
-
+    ranked_spent_ok = load(ranked_spent, f"{output_path}/customer_ranked")"""
+    cleaned_trans, cleaned_user_actv = transform(user_events_df, transaction_events_df)
+    try:
+        trans_ok = load(cleaned_trans, f'{output_path}/transactions')
+        user_ok = load(cleaned_user_actv, f'{output_path}/user_activities')
+        if trans_ok: to_archive(trans_files, input_path)
+        if user_ok: to_archive(user_files, input_path)
+        print(f'ETL JOB DONE!!!!')
+    except Exception as e:
+        print(f'ETL JOB FAILED: {e}')
 
 if __name__ == "__main__":
     #For SparkSession

@@ -54,3 +54,67 @@ ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64
 - Have to rebuild docker by:
     docker compose build --no-cache
     docker compose up -d --force-recreate
+
+# Spark Gold Zone
+1. Transactions (line-item or transaction grain)
+
+Example: transactions.csv
+One row per transaction (or per transaction item — either is OK, just be consistent)
+Fully flattened (no arrays, no nested structs)
+Correct data types
+Derived numeric fields allowed (e.g. item_revenue)
+Business-neutral (no KPIs yet)
+
+transaction_id
+user_id
+transaction_ts
+status
+payment_method
+currency
+product_id
+quantity
+unit_price
+item_revenue
+
+2. User events
+
+Example: user_events.csv
+One row per event
+Clean timestamps
+Standardized event names
+No aggregations
+
+event_id
+user_id
+event_type
+event_ts
+page
+device
+country
+
+3. Products
+
+Example: products.csv
+One row per product
+Latest known attributes
+No historical tracking needed at this stage
+
+product_id
+product_name
+category
+price
+is_active
+
+4. Customers
+
+Example: customers.csv
+One row per customer
+Cleaned demographics
+Stable IDs
+
+customer_id
+first_name
+last_name
+email
+country
+signup_date

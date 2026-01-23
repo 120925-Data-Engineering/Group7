@@ -154,6 +154,7 @@ services:
       - _AIRFLOW_WWW_USER_CREATE=true
       - _AIRFLOW_WWW_USER_USERNAME=admin
       - _AIRFLOW_WWW_USER_PASSWORD=admin
+      - AIRFLOW_CONN_SNOWFLAKE_CONNECTION=snowflake://TYLERP2405:4Y9HxUwvJ5iSHWB@CRC60880/?account=sfc85846.us-east-1&warehouse=COMPUTE_WH&database=Project2&schema=SCHEMA&role=ACCOUNTADMIN
 
     volumes:
       - ./dags:/opt/airflow/dags
