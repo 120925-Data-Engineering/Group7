@@ -14,7 +14,7 @@ USING (
     bill_country AS billing_country,
     bill_city AS billing_city,
     bill_state AS billing_state
-  FROM silver.stg_transactions
+  FROM silver.stg_transactions_stream
   WHERE timestamp IS NOT NULL
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY transaction_id

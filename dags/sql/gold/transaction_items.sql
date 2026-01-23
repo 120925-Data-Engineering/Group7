@@ -13,7 +13,7 @@ USING (
     item_subtotal,
     currency,
     line_item_index
-  FROM silver.stg_transaction_items
+  FROM silver.stg_transaction_items_stream
   WHERE transaction_id IS NOT NULL
     AND line_item_index IS NOT NULL
   QUALIFY ROW_NUMBER() OVER (

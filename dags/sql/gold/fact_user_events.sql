@@ -13,7 +13,7 @@ USING (
     city,
     product_id,
     quantity
-  FROM silver.stg_user_events
+  FROM silver.stg_user_events_stream
   WHERE event_id IS NOT NULL
   QUALIFY ROW_NUMBER() OVER (
     PARTITION BY event_id

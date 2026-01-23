@@ -23,8 +23,8 @@ USING (
         ) WITHIN GROUP (ORDER BY it.line_item_index),
         ARRAY_CONSTRUCT()
       ) AS purchase_items
-  FROM SILVER.STG_TRANSACTIONS tr
-  LEFT JOIN SILVER.STG_TRANSACTION_ITEMS it
+  FROM SILVER.stg_transactions_stream tr
+  LEFT JOIN SILVER.stg_transaction_items_stream it
     ON it.transaction_id = tr.transaction_id
   WHERE tr.status = 'completed'
     AND tr.transaction_type IN ('refund', 'chargeback')

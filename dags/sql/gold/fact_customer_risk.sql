@@ -18,7 +18,7 @@ USING (
       bill_city,
       bill_country,
       bill_state
-    FROM SILVER.STG_TRANSACTIONS
+    FROM SILVER.STG_TRANSACTIONS_stream
     WHERE status = 'completed'
       AND transaction_type IN ('refund', 'chargeback')
     QUALIFY ROW_NUMBER() OVER (
